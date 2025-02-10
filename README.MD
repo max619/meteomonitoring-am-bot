@@ -1,6 +1,6 @@
 # [meteomonitoring.am bot](https://t.me/MeteomonitoringAmBot)
 
-This is a telegram bot for getting forecast from meteomonitoring.am for Yerevan, Armenia.
+This is a telegram bot for getting forecast from [meteomonitoring.am](https://meteomonitoring.am) for Yerevan, Armenia.
 
 ### Installation
 
