@@ -174,4 +174,4 @@ bot.onText(/\/unsubscribe/, async (msg) => {
 
 // Start polling for image changes every 30 minutes
 checkImage();
-setInterval(checkImage, 30 * 60 * 1000);
+setInterval(checkImage, config.checkTimeout * 60 * 1000);
