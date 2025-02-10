@@ -1,13 +1,12 @@
 import fetch from "node-fetch";
 import TelegramBot from "node-telegram-bot-api";
 import { createHash } from "crypto";
-import fs from "fs/promises"; // Use the promises API for async operations
 import {
   addSubscriber,
   removeSubscriber,
   getSubscribers,
-  saveSubscribers,
   updateSubscriber,
+  updateSubscribers,
 } from "./subscriberManager.js"; // Import the subscriber manager
 import { loadConfig } from "./config.js";
 
@@ -80,22 +79,23 @@ async function sendImageToSubscribers(image: Image): Promise<void> {
     return;
   }
 
-  const newSubscribers = await Promise.all(
+  const updatedSubscribers = await Promise.all(
     subscribers.map((subscriber) => {
       if (subscriber.lastImageHash !== image.hash) {
-        bot
+        return bot
           .sendPhoto(subscriber.chatId, image.url)
           .then(() => ({ ...subscriber, lastImageHash: image.hash }))
           .catch((error) => {
             console.error("Error sending image:", error);
-            return subscriber;
+            return null;
           });
       }
-      return subscriber;
+      return null;
     })
   );
-
-  await saveSubscribers(newSubscribers);
+  updateSubscribers(
+    updatedSubscribers.filter((subscriber) => subscriber !== null)
+  );
 }
 
 // On client start send instructions

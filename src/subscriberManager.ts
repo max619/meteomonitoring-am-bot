@@ -1,73 +1,74 @@
-import fs from "fs/promises";
+import Database from "better-sqlite3";
 
 type Subscriber = {
   chatId: number;
   lastImageHash: string;
 };
 
-const subscribersFilePath = "subscribers.json"; // File to store subscriber IDs
+const dbFilePath = "subscribers.db"; // SQLite database file
+const db = new Database(dbFilePath); // Initialize the database
 
-// Load subscribers from the file
-export async function getSubscribers(): Promise<Subscriber[]> {
-  try {
-    const data = await fs.readFile(subscribersFilePath, "utf-8");
-    const subscribers = JSON.parse(data) as Subscriber[];
-    return subscribers;
-  } catch (error) {
-    if (error instanceof Error && "code" in error && error.code !== "ENOENT") {
-      // If the file does not exist, ignore the error
-      console.error("Error reading subscribers file:", error);
-    }
-  }
-
-  return [];
+// Initialize the database and create the subscribers table if it doesn't exist
+function initDatabase() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS subscribers (
+      chatId INTEGER PRIMARY KEY,
+      lastImageHash TEXT
+    )
+  `);
 }
 
-// Save subscribers to the file
-export async function saveSubscribers(
-  subscribers: Subscriber[]
-): Promise<void> {
-  await fs.writeFile(subscribersFilePath, JSON.stringify(subscribers, null, 2));
+// Load subscribers from the database
+export function getSubscribers(): Subscriber[] {
+  return db.prepare("SELECT * FROM subscribers").all() as Subscriber[];
 }
 
 // Add a subscriber
-export async function addSubscriber(chatId: number): Promise<boolean> {
-  const subscribers = await getSubscribers();
-  if (!subscribers.some((subscriber) => subscriber.chatId === chatId)) {
-    subscribers.push({ chatId, lastImageHash: "" });
-    await saveSubscribers(subscribers); // Save subscribers after adding
-    return true; // Return true on success
-  }
-  return false; // Return false if already subscribed
+export function addSubscriber(chatId: number): boolean {
+  const stmt = db.prepare(
+    "INSERT OR IGNORE INTO subscribers (chatId, lastImageHash) VALUES (?, ?)"
+  );
+  const result = stmt.run(chatId, ""); // Attempt to insert the new subscriber
+
+  return result.changes > 0; // Return true if a new subscriber was added, false if already exists
 }
 
 // Remove a subscriber
-export async function removeSubscriber(chatId: number): Promise<boolean> {
-  const subscribers = await getSubscribers();
-  const index = subscribers.findIndex(
-    (subscriber) => subscriber.chatId === chatId
-  );
-  if (index > -1) {
-    subscribers.splice(index, 1);
-    await saveSubscribers(subscribers); // Save subscribers after removing
-    return true; // Return true on success
-  }
-  return false; // Return false if not found
+export function removeSubscriber(chatId: number): boolean {
+  const result = db
+    .prepare("DELETE FROM subscribers WHERE chatId = ?")
+    .run(chatId);
+  return result.changes > 0; // Return true if a subscriber was deleted
 }
 
 // Update a subscriber's last image hash
-export async function updateSubscriber(
+export function updateSubscriber(
   chatId: number,
   lastImageHash: string
-): Promise<Subscriber | null> {
-  const subscribers = await getSubscribers();
-  const index = subscribers.findIndex(
-    (subscriber) => subscriber.chatId === chatId
+): Subscriber | null {
+  const stmt = db.prepare(
+    "UPDATE subscribers SET lastImageHash = ? WHERE chatId = ?"
   );
-  if (index > -1) {
-    subscribers[index].lastImageHash = lastImageHash;
-    await saveSubscribers(subscribers); // Save subscribers after removing
-    return subscribers[index];
+  const result = stmt.run(lastImageHash, chatId); // Directly update the subscriber's last image hash
+
+  if (result.changes > 0) {
+    return { chatId, lastImageHash }; // Return the updated subscriber
   }
-  return null;
+  return null; // Return null if the subscriber was not found
 }
+
+// update multiple subscribers
+export function updateSubscribers(subscribers: Subscriber[]): void {
+  const stmt = db.prepare(
+    "UPDATE subscribers SET lastImageHash = ? WHERE chatId = ?"
+  );
+  const transaction = db.transaction((subs: Subscriber[]) => {
+    for (const subscriber of subs) {
+      stmt.run(subscriber.lastImageHash, subscriber.chatId);
+    }
+  });
+  transaction(subscribers); // Execute the transaction
+}
+
+// Initialize the database when the module is loaded
+initDatabase();
