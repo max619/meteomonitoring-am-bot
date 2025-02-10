@@ -15,8 +15,6 @@ type Image = {
   hash: string;
 };
 
-const lastImageFilePath = "lastImage.jpg";
-
 const config = loadConfig();
 
 // Replace with your bot token
