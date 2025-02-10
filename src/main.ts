@@ -39,6 +39,10 @@ async function fetchImage(): Promise<Image | null> {
   const imageUrl = getCurrentImageUrl(); // Use the dynamically generated URL
   try {
     const response = await fetch(imageUrl);
+    if (!response.ok) {
+      console.error("Error fetching image:", response.statusText);
+      return null;
+    }
     const buffer = await response.buffer();
     lastImageHash = createHash("md5").update(buffer).digest("hex");
 
@@ -70,7 +74,7 @@ async function checkImage(): Promise<void> {
 // Function to send the image to all subscribers
 // Returns the updated subscribers
 async function sendImageToSubscribers(image: Image): Promise<void> {
-  const subscribers = await getSubscribers();
+  const subscribers = getSubscribers();
   if (
     subscribers.some((subscriber) => subscriber.lastImageHash === image.hash)
   ) {
@@ -108,7 +112,7 @@ bot.onText(/\/start/, async (msg) => {
 
 bot.onText(/\/subscribe/, async (msg) => {
   const chatId = msg.chat.id;
-  if (await addSubscriber(chatId)) {
+  if (addSubscriber(chatId)) {
     await bot
       .sendMessage(chatId, "You have subscribed to image updates.")
       .catch((error) =>
@@ -128,6 +132,12 @@ bot.onText(/\/subscribe/, async (msg) => {
       if (wasImageSent) {
         await updateSubscriber(chatId, image.hash);
       }
+    } else {
+      await bot
+        .sendMessage(chatId, "There is no forecast image for now.")
+        .catch((error) =>
+          console.error("Error sending subscribe message:", error)
+        );
     }
 
     console.log("User subscribed:", msg.chat.id);
@@ -148,7 +158,7 @@ bot.onText(/\/subscribe/, async (msg) => {
 // Command to unsubscribe users
 bot.onText(/\/unsubscribe/, async (msg) => {
   const chatId = msg.chat.id;
-  if (await removeSubscriber(chatId)) {
+  if (removeSubscriber(chatId)) {
     await bot
       .sendMessage(chatId, "You have unsubscribed from image updates.")
       .catch((error) =>
