@@ -6,13 +6,23 @@ import {
   addSubscriber,
   removeSubscriber,
   getSubscribers,
+  saveSubscribers,
+  updateSubscriber,
 } from "./subscriberManager.js"; // Import the subscriber manager
 import { loadConfig } from "./config.js";
+
+type Image = {
+  url: string;
+  hash: string;
+};
+
+const lastImageFilePath = "lastImage.jpg";
 
 const config = loadConfig();
 
 // Replace with your bot token
 const bot = new TelegramBot(config.token, { polling: true });
+let lastImageHash = "";
 
 // URL of the image to monitor
 const baseUrl =
@@ -26,50 +36,66 @@ const getCurrentImageUrl = (): string => {
   return `${baseUrl}${year}/${month}-${day}-yerevan.jpg`; // Updated URL structure
 };
 
-const hashFilePath = "lastImageHash.txt"; // File to store the last image hash
+let lastImage: Image | null = null;
 
-// Load the last image hash from the file if it exists
-async function loadLastImageHash(): Promise<string | null> {
-  try {
-    const data = await fs.readFile(hashFilePath, "utf-8");
-    return data;
-  } catch (error) {
-    if (error instanceof Error && "code" in error && error.code !== "ENOENT") {
-      // If the file does not exist, ignore the error
-      console.error("Error reading hash file:", error);
-    }
-    return null;
-  }
-}
-
-// Function to fetch the image and check for changes
-async function checkImage(): Promise<void> {
+async function fetchImage(): Promise<Image | null> {
   const imageUrl = getCurrentImageUrl(); // Use the dynamically generated URL
   try {
     const response = await fetch(imageUrl);
     const buffer = await response.buffer();
-    const currentImageHash = createHash("md5").update(buffer).digest("hex");
-    const lastImageHash = await loadLastImageHash();
+    lastImageHash = createHash("md5").update(buffer).digest("hex");
 
-    if (lastImageHash !== currentImageHash) {
-      await fs.writeFile(hashFilePath, currentImageHash); // Save the new hash to the file
-      sendImageToSubscribers(buffer);
-    }
+    return { url: imageUrl, hash: lastImageHash };
   } catch (error) {
     console.error("Error fetching image:", error);
+  }
+
+  return null;
+}
+
+async function getLastImageOrFetch(): Promise<Image | null> {
+  if (lastImage) {
+    return lastImage;
+  }
+
+  return fetchImage();
+}
+
+// Function to fetch the image and check for changes
+async function checkImage(): Promise<void> {
+  const image = await fetchImage();
+  if (image) {
+    lastImage = image;
+    sendImageToSubscribers(image);
   }
 }
 
 // Function to send the image to all subscribers
-async function sendImageToSubscribers(imageBuffer: Buffer): Promise<void> {
+// Returns the updated subscribers
+async function sendImageToSubscribers(image: Image): Promise<void> {
   const subscribers = await getSubscribers();
-  await Promise.all(
-    subscribers.map((chatId) => {
-      bot
-        .sendPhoto(chatId, imageBuffer)
-        .catch((error) => console.error("Error sending image:", error));
+  if (
+    subscribers.some((subscriber) => subscriber.lastImageHash === image.hash)
+  ) {
+    return;
+  }
+
+  const newSubscribers = await Promise.all(
+    subscribers.map((subscriber) => {
+      if (subscriber.lastImageHash !== image.hash) {
+        bot
+          .sendPhoto(subscriber.chatId, image.url)
+          .then(() => ({ ...subscriber, lastImageHash: image.hash }))
+          .catch((error) => {
+            console.error("Error sending image:", error);
+            return subscriber;
+          });
+      }
+      return subscriber;
     })
   );
+
+  await saveSubscribers(newSubscribers);
 }
 
 // On client start send instructions
@@ -90,6 +116,21 @@ bot.onText(/\/subscribe/, async (msg) => {
       .catch((error) =>
         console.error("Error sending subscribe message:", error)
       );
+
+    const image = await getLastImageOrFetch();
+    if (image) {
+      const wasImageSent = await bot
+        .sendPhoto(chatId, image.url)
+        .then(() => true)
+        .catch((error) => {
+          console.error("Error sending image on subscribe message:", error);
+          return false;
+        });
+
+      if (wasImageSent) {
+        await updateSubscriber(chatId, image.hash);
+      }
+    }
 
     console.log("User subscribed:", msg.chat.id);
   } else {
