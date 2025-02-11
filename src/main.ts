@@ -19,7 +19,6 @@ const config = loadConfig();
 
 // Replace with your bot token
 const bot = new TelegramBot(config.token, { polling: true });
-let lastImageHash = "";
 
 // URL of the image to monitor
 const baseUrl =
@@ -44,9 +43,11 @@ async function fetchImage(): Promise<Image | null> {
       return null;
     }
     const buffer = await response.buffer();
-    lastImageHash = createHash("md5").update(buffer).digest("hex");
+    const hash = createHash("md5").update(buffer).digest("hex");
 
-    return { url: imageUrl, hash: lastImageHash };
+    console.log(`Fetched image ${imageUrl} hash: ${hash}`);
+
+    return { url: imageUrl, hash };
   } catch (error) {
     console.error("Error fetching image:", error);
   }
@@ -76,8 +77,11 @@ async function checkImage(): Promise<void> {
 async function sendImageToSubscribers(image: Image): Promise<void> {
   const subscribers = getSubscribers();
   if (
-    subscribers.some((subscriber) => subscriber.lastImageHash === image.hash)
+    subscribers.every((subscriber) => subscriber.lastImageHash === image.hash)
   ) {
+    console.log(
+      "Every subscriber has the same image, skipping sending to subscribers"
+    );
     return;
   }
 
@@ -88,7 +92,10 @@ async function sendImageToSubscribers(image: Image): Promise<void> {
           .sendPhoto(subscriber.chatId, image.url)
           .then(() => ({ ...subscriber, lastImageHash: image.hash }))
           .catch((error) => {
-            console.error("Error sending image:", error);
+            console.error(
+              `Error sending image '${image.url}' to subscriber ${subscriber.chatId} :`,
+              error
+            );
             return null;
           });
       }
