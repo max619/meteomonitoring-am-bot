@@ -12,6 +12,7 @@ import { loadConfig } from "./config.js";
 
 type Image = {
   url: string;
+  data: Buffer;
   hash: string;
 };
 
@@ -47,7 +48,7 @@ async function fetchImage(): Promise<Image | null> {
 
     console.log(`Fetched image ${imageUrl} hash: ${hash}`);
 
-    return { url: imageUrl, hash };
+    return { url: imageUrl, data: buffer, hash };
   } catch (error) {
     console.error("Error fetching image:", error);
   }
@@ -60,14 +61,14 @@ async function getLastImageOrFetch(): Promise<Image | null> {
     return lastImage;
   }
 
-  return fetchImage();
+  lastImage = await fetchImage();
+  return lastImage;
 }
 
 // Function to fetch the image and check for changes
 async function checkImage(): Promise<void> {
   const image = await fetchImage();
   if (image) {
-    lastImage = image;
     sendImageToSubscribers(image);
   }
 }
@@ -89,7 +90,7 @@ async function sendImageToSubscribers(image: Image): Promise<void> {
     subscribers.map((subscriber) => {
       if (subscriber.lastImageHash !== image.hash) {
         return bot
-          .sendPhoto(subscriber.chatId, image.url)
+          .sendPhoto(subscriber.chatId, image.data)
           .then(() => ({ ...subscriber, lastImageHash: image.hash }))
           .catch((error) => {
             console.error(
@@ -129,7 +130,7 @@ bot.onText(/\/subscribe/, async (msg) => {
     const image = await getLastImageOrFetch();
     if (image) {
       const wasImageSent = await bot
-        .sendPhoto(chatId, image.url)
+        .sendPhoto(chatId, image.data)
         .then(() => true)
         .catch((error) => {
           console.error("Error sending image on subscribe message:", error);
