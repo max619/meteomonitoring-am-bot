@@ -1,0 +1,14 @@
+[Unit]
+Description=MeteoMonitoring AM Service
+Documentation=https://github.com/max619/meteomonitoring-am-bot
+After=network.target nss-lookup.target
+
+[Service]
+User=meteomonitoring
+NoNewPrivileges=true
+ExecStart=/usr/bin/node dist/main.js
+Restart=on-failure
+WorkingDirectory=/opt/meteomonitoring-am-bot
+
+[Install]
+WantedBy=multi-user.target
