@@ -25,32 +25,39 @@ const bot = new TelegramBot(config.token, { polling: true });
 const baseUrl =
   "https://meteomonitoring.am/public/admin/ckfinder/userfiles/files/weather-";
 
-const getCurrentImageUrl = (): string => {
+const getCurrentImageUrls = (): string[] => {
   const today = new Date();
   const year = today.getFullYear(); // Get the current year
   const day = String(today.getDate()).padStart(2, "0");
   const month = String(today.getMonth() + 1).padStart(2, "0"); // Months are zero-based
-  return `${baseUrl}${year}/${month}-${day}-yerevan.jpg`; // Updated URL structure
+  return [
+    `${baseUrl}${year}/${month}-${day}-${year - 2000}-yerevan.jpg`,
+    `${baseUrl}${year}/${month}-${day}-yerevan.jpg`,
+  ];
 };
 
 let lastImage: Image | null = null;
 
 async function fetchImage(): Promise<Image | null> {
-  const imageUrl = getCurrentImageUrl(); // Use the dynamically generated URL
-  try {
-    const response = await fetch(imageUrl);
-    if (!response.ok) {
-      console.error("Error fetching image:", response.statusText);
-      return null;
+  const imageUrls = getCurrentImageUrls(); // Use the dynamically generated URL
+  for (const url of imageUrls) {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        console.error(
+          `Error fetching image: ${response.statusText}. From ${url}`
+        );
+        return null;
+      }
+      const buffer = await response.buffer();
+      const hash = createHash("md5").update(buffer).digest("hex");
+
+      console.log(`Fetched image ${url} hash: ${hash}`);
+
+      return { url: url, data: buffer, hash };
+    } catch (error) {
+      console.error("Error fetching image:", error);
     }
-    const buffer = await response.buffer();
-    const hash = createHash("md5").update(buffer).digest("hex");
-
-    console.log(`Fetched image ${imageUrl} hash: ${hash}`);
-
-    return { url: imageUrl, data: buffer, hash };
-  } catch (error) {
-    console.error("Error fetching image:", error);
   }
 
   return null;
