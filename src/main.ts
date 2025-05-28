@@ -23,7 +23,7 @@ const bot = new TelegramBot(config.token, { polling: true });
 
 // URL of the image to monitor
 const baseUrl =
-  "https://meteomonitoring.am/public/admin/ckfinder/userfiles/files/weather-";
+  "https://meteomonitoring.am/public/admin/ckfinder/userfiles/files";
 
 const getCurrentImageUrls = (): string[] => {
   const today = new Date();
@@ -31,8 +31,9 @@ const getCurrentImageUrls = (): string[] => {
   const day = String(today.getDate()).padStart(2, "0");
   const month = String(today.getMonth() + 1).padStart(2, "0"); // Months are zero-based
   return [
-    `${baseUrl}${year}/${month}-${day}-${year - 2000}-yerevan.jpg`,
-    `${baseUrl}${year}/${month}-${day}-yerevan.jpg`,
+    `${baseUrl}/weather-${year}/${month}-${day}-${year - 2000}-yerevan.jpg`,
+    `${baseUrl}/weather-${year}/${month}-${day}-yerevan.jpg`,
+    `${baseUrl}/%D5%A5%D6%80%D6%87%D5%A1%D5%B6%20${day}.jpg`,
   ];
 };
 
@@ -47,7 +48,8 @@ async function fetchImage(): Promise<Image | null> {
         console.error(
           `Error fetching image: ${response.statusText}. From ${url}`
         );
-        return null;
+
+        continue;
       }
       const buffer = await response.buffer();
       const hash = createHash("md5").update(buffer).digest("hex");
