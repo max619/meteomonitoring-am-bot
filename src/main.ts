@@ -7,12 +7,26 @@ import {
   updateSubscribers,
 } from "./subscriberManager.js"; // Import the subscriber manager
 import { loadConfig } from "./config.js";
+import { createProxyAgent } from "./proxy.js";
 import { fetchForecast, Forecast } from "./forecast.js";
 
 const config = loadConfig();
 
+// Routes both the telegram api and the forecast requests
+// through the socks5 proxy, when one is configured
+const proxyAgent = createProxyAgent(config.proxy);
+
+// The request options are typed as the full request Options, which require an
+// url, while the bot only merges them into the options of its own requests
+const requestOptions = {
+  agent: proxyAgent,
+} as TelegramBot.ConstructorOptions["request"];
+
 // Replace with your bot token
-const bot = new TelegramBot(config.token, { polling: true });
+const bot = new TelegramBot(config.token, {
+  polling: true,
+  request: requestOptions,
+});
 
 const messageOptions: TelegramBot.SendMessageOptions = { parse_mode: "HTML" };
 
@@ -23,13 +37,13 @@ async function getLastForecastOrFetch(): Promise<Forecast | null> {
     return lastForecast;
   }
 
-  lastForecast = await fetchForecast();
+  lastForecast = await fetchForecast(proxyAgent);
   return lastForecast;
 }
 
 // Function to fetch the forecast and check for changes
 async function checkForecast(): Promise<void> {
-  const forecast = await fetchForecast();
+  const forecast = await fetchForecast(proxyAgent);
   if (forecast) {
     lastForecast = forecast;
     sendForecastToSubscribers(forecast);

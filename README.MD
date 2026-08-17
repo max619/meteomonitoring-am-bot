@@ -35,6 +35,16 @@ ln -s /opt/meteomonitoring-am-bot/meteomonitoring.service /lib/systemd/system/me
 }
 ```
 
+Optionally add a `proxy` field to route both the Telegram API and the forecast requests through a SOCKS5 proxy. Only the `socks5://` and `socks5h://` schemes are supported, `socks5h://` resolves the host names on the proxy side. Credentials are optional. Without the field the requests are made directly.
+
+```json
+{
+  "token": "<token>",
+  "checkTimeout": "120",
+  "proxy": "socks5h://user:password@127.0.0.1:1080"
+}
+```
+
 5. Add user meteomontoring and update files permissions
 
 ```sh

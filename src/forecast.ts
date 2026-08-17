@@ -1,4 +1,5 @@
 import fetch from "node-fetch";
+import { Agent } from "http";
 import { createHash } from "crypto";
 
 // Language and region of the forecast endpoint.
@@ -100,9 +101,11 @@ function parseForecastDays(response: ForecastResponse): ForecastDay[] {
     });
 }
 
-export async function fetchForecast(): Promise<Forecast | null> {
+export async function fetchForecast(
+  agent?: Agent
+): Promise<Forecast | null> {
   try {
-    const response = await fetch(apiUrl);
+    const response = await fetch(apiUrl, { agent });
     if (!response.ok) {
       console.error(
         `Error fetching forecast: ${response.statusText}. From ${apiUrl}`
