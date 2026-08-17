@@ -1,4 +1,5 @@
-import TelegramBot from "node-telegram-bot-api";
+import { Bot, type SendMessageParams } from "node-telegram-bot-api";
+import { run } from "node-telegram-bot-api/node";
 import {
   addSubscriber,
   removeSubscriber,
@@ -7,7 +8,7 @@ import {
   updateSubscribers,
 } from "./subscriberManager.js"; // Import the subscriber manager
 import { loadConfig } from "./config.js";
-import { createProxyAgent } from "./proxy.js";
+import { createProxyAgent, createProxyFetch } from "./proxy.js";
 import { fetchForecast, Forecast } from "./forecast.js";
 
 const config = loadConfig();
@@ -16,19 +17,11 @@ const config = loadConfig();
 // through the socks5 proxy, when one is configured
 const proxyAgent = createProxyAgent(config.proxy);
 
-// The request options are typed as the full request Options, which require an
-// url, while the bot only merges them into the options of its own requests
-const requestOptions = {
-  agent: proxyAgent,
-} as TelegramBot.ConstructorOptions["request"];
+const bot = new Bot(config.token, { fetch: createProxyFetch(proxyAgent) });
 
-// Replace with your bot token
-const bot = new TelegramBot(config.token, {
-  polling: true,
-  request: requestOptions,
-});
-
-const messageOptions: TelegramBot.SendMessageOptions = { parse_mode: "HTML" };
+const messageOptions: Omit<SendMessageParams, "chat_id" | "text"> = {
+  parse_mode: "HTML",
+};
 
 let lastForecast: Forecast | null = null;
 
@@ -67,8 +60,12 @@ async function sendForecastToSubscribers(forecast: Forecast): Promise<void> {
   const updatedSubscribers = await Promise.all(
     subscribers.map((subscriber) => {
       if (subscriber.lastForecastHash !== forecast.hash) {
-        return bot
-          .sendMessage(subscriber.chatId, forecast.text, messageOptions)
+        return bot.api
+          .sendMessage({
+            chat_id: subscriber.chatId,
+            text: forecast.text,
+            ...messageOptions,
+          })
           .then(() => ({ ...subscriber, lastForecastHash: forecast.hash }))
           .catch((error) => {
             console.error(
@@ -87,28 +84,33 @@ async function sendForecastToSubscribers(forecast: Forecast): Promise<void> {
 }
 
 // On client start send instructions
-bot.onText(/\/start/, async (msg) => {
-  await bot
-    .sendMessage(
-      msg.chat.id,
+bot.command("start", async (ctx) => {
+  await ctx
+    .reply(
       "You can subscribe to forecast updates with /subscribe command.\nYou can unsubscribe from forecast updates with /unsubscribe command."
     )
     .catch((error) => console.error("Error sending start message:", error));
 });
 
-bot.onText(/\/subscribe/, async (msg) => {
-  const chatId = msg.chat.id;
+bot.command("subscribe", async (ctx) => {
+  // Commands always come from a message, so the chat is only missing
+  // for the update types this handler never sees
+  const chatId = ctx.chatId;
+  if (chatId === undefined) {
+    return;
+  }
+
   if (addSubscriber(chatId)) {
-    await bot
-      .sendMessage(chatId, "You have subscribed to forecast updates.")
+    await ctx
+      .reply("You have subscribed to forecast updates.")
       .catch((error) =>
         console.error("Error sending subscribe message:", error)
       );
 
     const forecast = await getLastForecastOrFetch();
     if (forecast) {
-      const wasForecastSent = await bot
-        .sendMessage(chatId, forecast.text, messageOptions)
+      const wasForecastSent = await ctx
+        .reply(forecast.text, messageOptions)
         .then(() => true)
         .catch((error) => {
           console.error("Error sending forecast on subscribe message:", error);
@@ -119,53 +121,62 @@ bot.onText(/\/subscribe/, async (msg) => {
         await updateSubscriber(chatId, forecast.hash);
       }
     } else {
-      await bot
-        .sendMessage(chatId, "There is no forecast for now.")
+      await ctx
+        .reply("There is no forecast for now.")
         .catch((error) =>
           console.error("Error sending subscribe message:", error)
         );
     }
 
-    console.log("User subscribed:", msg.chat.id);
+    console.log("User subscribed:", chatId);
   } else {
-    await bot
-      .sendMessage(
-        chatId,
+    await ctx
+      .reply(
         "You are already subscribed to forecast updates. You can unsubscribe with /unsubscribe command."
       )
       .catch((error) =>
         console.error("Error sending subscribe message:", error)
       );
 
-    console.log("User already subscribed:", msg.chat.id);
+    console.log("User already subscribed:", chatId);
   }
 });
 
 // Command to unsubscribe users
-bot.onText(/\/unsubscribe/, async (msg) => {
-  const chatId = msg.chat.id;
+bot.command("unsubscribe", async (ctx) => {
+  const chatId = ctx.chatId;
+  if (chatId === undefined) {
+    return;
+  }
+
   if (removeSubscriber(chatId)) {
-    await bot
-      .sendMessage(chatId, "You have unsubscribed from forecast updates.")
+    await ctx
+      .reply("You have unsubscribed from forecast updates.")
       .catch((error) =>
         console.error("Error sending unsubscribe message:", error)
       );
 
-    console.log("User unsubscribed:", msg.chat.id);
+    console.log("User unsubscribed:", chatId);
   } else {
-    await bot
-      .sendMessage(
-        chatId,
+    await ctx
+      .reply(
         "You are not subscribed to forecast updates. You can subscribe with /subscribe command."
       )
       .catch((error) =>
         console.error("Error sending unsubscribe message:", error)
       );
 
-    console.log("User not subscribed:", msg.chat.id);
+    console.log("User not subscribed:", chatId);
   }
 });
 
 // Start polling for forecast changes every 30 minutes
 checkForecast();
-setInterval(checkForecast, config.checkTimeout * 60 * 1000);
+const forecastInterval = setInterval(
+  checkForecast,
+  config.checkTimeout * 60 * 1000
+);
+
+// Pumps the updates until SIGINT or SIGTERM stops the bot
+await run(bot);
+clearInterval(forecastInterval);
