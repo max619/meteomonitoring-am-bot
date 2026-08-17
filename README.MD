@@ -4,7 +4,47 @@ This is a telegram bot for getting forecast from [meteomonitoring.am](https://me
 
 The bot polls the `https://meteomonitoring.am/api/weather/ru/1` endpoint and sends the 6 day forecast as text to its subscribers whenever the forecast changes. Subscribe with `/subscribe`, unsubscribe with `/unsubscribe`.
 
-### Installation
+### Installation with Docker
+
+1. Clone the repository and create a `data` dir holding the `config.json`, see the config format in the step 4 of the systemd installation below
+
+```sh
+git clone https://github.com/max619/meteomonitoring-am-bot.git
+cd meteomonitoring-am-bot
+mkdir -p data
+cp config.template.json data/config.json
+```
+
+2. Give the dir to uid 1000, the `node` user the container runs as, so the bot can create its database
+
+```sh
+sudo chown -R 1000:1000 data
+```
+
+3. Build the image and start the bot
+
+```sh
+docker compose up -d --build
+```
+
+The container runs with `/data` as its working directory, so the whole state of the bot is the `data` dir, holding the `config.json` you created and the `subscribers.db` the bot creates next to it. Both survive a rebuild.
+
+Follow the logs with `docker compose logs -f` and stop the bot with `docker compose down`.
+
+To run the image without compose, mount the same dir yourself:
+
+```sh
+docker build -t meteomonitoring-am-bot .
+docker run -d --name meteomonitoring-am-bot --restart unless-stopped \
+  -v "$PWD/data:/data" \
+  meteomonitoring-am-bot
+```
+
+Mount the dir, never the `config.json` alone. Docker silently creates a directory in the place of any bind mount source that does not exist yet, and a `config.json` directory makes the container fail to start with `not a directory`.
+
+A `proxy` pointing at `127.0.0.1` resolves to the container itself, not to the host. Point it at `host.docker.internal` for a proxy running on the host, or at the service name when the proxy is another container on the same network.
+
+### Installation with systemd
 
 1. Clone the repository into `/opt/meteomonitoring-am-bot`
 

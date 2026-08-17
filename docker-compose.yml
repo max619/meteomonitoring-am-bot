@@ -1,0 +1,10 @@
+services:
+  bot:
+    build: .
+    image: meteomonitoring-am-bot
+    restart: unless-stopped
+    init: true
+    # /data is the working directory of the container, so it holds both
+    # config.json and the subscribers.db the bot creates next to it
+    volumes:
+      - ./data:/data
