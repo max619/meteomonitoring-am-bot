@@ -2,6 +2,8 @@
 
 This is a telegram bot for getting forecast from [meteomonitoring.am](https://meteomonitoring.am) for Yerevan, Armenia.
 
+The bot polls the `https://meteomonitoring.am/api/weather/ru/1` endpoint and sends the 6 day forecast as text to its subscribers whenever the forecast changes. Subscribe with `/subscribe`, unsubscribe with `/unsubscribe`.
+
 ### Installation
 
 1. Clone the repository into `/opt/meteomonitoring-am-bot`

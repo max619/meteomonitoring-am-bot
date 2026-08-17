@@ -1,6 +1,4 @@
-import fetch from "node-fetch";
 import TelegramBot from "node-telegram-bot-api";
-import { createHash } from "crypto";
 import {
   addSubscriber,
   removeSubscriber,
@@ -9,101 +7,58 @@ import {
   updateSubscribers,
 } from "./subscriberManager.js"; // Import the subscriber manager
 import { loadConfig } from "./config.js";
-
-type Image = {
-  url: string;
-  data: Buffer;
-  hash: string;
-};
+import { fetchForecast, Forecast } from "./forecast.js";
 
 const config = loadConfig();
 
 // Replace with your bot token
 const bot = new TelegramBot(config.token, { polling: true });
 
-// URL of the image to monitor
-const baseUrl =
-  "https://meteomonitoring.am/public/admin/ckfinder/userfiles/files";
+const messageOptions: TelegramBot.SendMessageOptions = { parse_mode: "HTML" };
 
-const getCurrentImageUrls = (): string[] => {
-  const today = new Date();
-  const year = today.getFullYear(); // Get the current year
-  const day = String(today.getDate()).padStart(2, "0");
-  const month = String(today.getMonth() + 1).padStart(2, "0"); // Months are zero-based
-  return [
-    `${baseUrl}/weather-${year}/${month}-${day}-${year - 2000}-yerevan.jpg`,
-    `${baseUrl}/weather-${year}/${month}-${day}-yerevan.jpg`,
-    `${baseUrl}/%D5%A5%D6%80%D6%87%D5%A1%D5%B6%20${day}.jpg`,
-  ];
-};
+let lastForecast: Forecast | null = null;
 
-let lastImage: Image | null = null;
-
-async function fetchImage(): Promise<Image | null> {
-  const imageUrls = getCurrentImageUrls(); // Use the dynamically generated URL
-  for (const url of imageUrls) {
-    try {
-      const response = await fetch(url);
-      if (!response.ok) {
-        console.error(
-          `Error fetching image: ${response.statusText}. From ${url}`
-        );
-
-        continue;
-      }
-      const buffer = await response.buffer();
-      const hash = createHash("md5").update(buffer).digest("hex");
-
-      console.log(`Fetched image ${url} hash: ${hash}`);
-
-      return { url: url, data: buffer, hash };
-    } catch (error) {
-      console.error("Error fetching image:", error);
-    }
+async function getLastForecastOrFetch(): Promise<Forecast | null> {
+  if (lastForecast) {
+    return lastForecast;
   }
 
-  return null;
+  lastForecast = await fetchForecast();
+  return lastForecast;
 }
 
-async function getLastImageOrFetch(): Promise<Image | null> {
-  if (lastImage) {
-    return lastImage;
-  }
-
-  lastImage = await fetchImage();
-  return lastImage;
-}
-
-// Function to fetch the image and check for changes
-async function checkImage(): Promise<void> {
-  const image = await fetchImage();
-  if (image) {
-    sendImageToSubscribers(image);
+// Function to fetch the forecast and check for changes
+async function checkForecast(): Promise<void> {
+  const forecast = await fetchForecast();
+  if (forecast) {
+    lastForecast = forecast;
+    sendForecastToSubscribers(forecast);
   }
 }
 
-// Function to send the image to all subscribers
-// Returns the updated subscribers
-async function sendImageToSubscribers(image: Image): Promise<void> {
+// Function to send the forecast to all subscribers
+async function sendForecastToSubscribers(forecast: Forecast): Promise<void> {
   const subscribers = getSubscribers();
   if (
-    subscribers.every((subscriber) => subscriber.lastImageHash === image.hash)
+    subscribers.every(
+      (subscriber) => subscriber.lastForecastHash === forecast.hash
+    )
   ) {
     console.log(
-      "Every subscriber has the same image, skipping sending to subscribers"
+      "Every subscriber has the same forecast, skipping sending to subscribers"
     );
     return;
   }
 
   const updatedSubscribers = await Promise.all(
     subscribers.map((subscriber) => {
-      if (subscriber.lastImageHash !== image.hash) {
+      if (subscriber.lastForecastHash !== forecast.hash) {
         return bot
-          .sendPhoto(subscriber.chatId, image.data)
-          .then(() => ({ ...subscriber, lastImageHash: image.hash }))
+          .sendMessage(subscriber.chatId, forecast.text, messageOptions)
+          .then(() => ({ ...subscriber, lastForecastHash: forecast.hash }))
           .catch((error) => {
             console.error(
-              `Error sending image '${image.url}' to subscriber ${subscriber.chatId} :`,
+              `Error sending forecast to subscriber ${subscriber.chatId} :`,
               error
             );
             return null;
@@ -122,7 +77,7 @@ bot.onText(/\/start/, async (msg) => {
   await bot
     .sendMessage(
       msg.chat.id,
-      "You can subscribe to image updates with /subscribe command.\nYou can unsubscribe from image updates with /unsubscribe command."
+      "You can subscribe to forecast updates with /subscribe command.\nYou can unsubscribe from forecast updates with /unsubscribe command."
     )
     .catch((error) => console.error("Error sending start message:", error));
 });
@@ -131,27 +86,27 @@ bot.onText(/\/subscribe/, async (msg) => {
   const chatId = msg.chat.id;
   if (addSubscriber(chatId)) {
     await bot
-      .sendMessage(chatId, "You have subscribed to image updates.")
+      .sendMessage(chatId, "You have subscribed to forecast updates.")
       .catch((error) =>
         console.error("Error sending subscribe message:", error)
       );
 
-    const image = await getLastImageOrFetch();
-    if (image) {
-      const wasImageSent = await bot
-        .sendPhoto(chatId, image.data)
+    const forecast = await getLastForecastOrFetch();
+    if (forecast) {
+      const wasForecastSent = await bot
+        .sendMessage(chatId, forecast.text, messageOptions)
         .then(() => true)
         .catch((error) => {
-          console.error("Error sending image on subscribe message:", error);
+          console.error("Error sending forecast on subscribe message:", error);
           return false;
         });
 
-      if (wasImageSent) {
-        await updateSubscriber(chatId, image.hash);
+      if (wasForecastSent) {
+        await updateSubscriber(chatId, forecast.hash);
       }
     } else {
       await bot
-        .sendMessage(chatId, "There is no forecast image for now.")
+        .sendMessage(chatId, "There is no forecast for now.")
         .catch((error) =>
           console.error("Error sending subscribe message:", error)
         );
@@ -162,7 +117,7 @@ bot.onText(/\/subscribe/, async (msg) => {
     await bot
       .sendMessage(
         chatId,
-        "You are already subscribed to image updates. You can unsubscribe with /unsubscribe command."
+        "You are already subscribed to forecast updates. You can unsubscribe with /unsubscribe command."
       )
       .catch((error) =>
         console.error("Error sending subscribe message:", error)
@@ -177,7 +132,7 @@ bot.onText(/\/unsubscribe/, async (msg) => {
   const chatId = msg.chat.id;
   if (removeSubscriber(chatId)) {
     await bot
-      .sendMessage(chatId, "You have unsubscribed from image updates.")
+      .sendMessage(chatId, "You have unsubscribed from forecast updates.")
       .catch((error) =>
         console.error("Error sending unsubscribe message:", error)
       );
@@ -187,7 +142,7 @@ bot.onText(/\/unsubscribe/, async (msg) => {
     await bot
       .sendMessage(
         chatId,
-        "You are not subscribed to image updates. You can subscribe with /subscribe command."
+        "You are not subscribed to forecast updates. You can subscribe with /subscribe command."
       )
       .catch((error) =>
         console.error("Error sending unsubscribe message:", error)
@@ -197,6 +152,6 @@ bot.onText(/\/unsubscribe/, async (msg) => {
   }
 });
 
-// Start polling for image changes every 30 minutes
-checkImage();
-setInterval(checkImage, config.checkTimeout * 60 * 1000);
+// Start polling for forecast changes every 30 minutes
+checkForecast();
+setInterval(checkForecast, config.checkTimeout * 60 * 1000);
