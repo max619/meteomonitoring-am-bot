@@ -4,6 +4,8 @@ This is a telegram bot for getting forecast from [meteomonitoring.am](https://me
 
 The bot polls the `https://meteomonitoring.am/api/weather/ru/1` endpoint and sends the 6 day forecast as text to its subscribers whenever the forecast changes. Subscribe with `/subscribe`, unsubscribe with `/unsubscribe`.
 
+Each part of the day is prefixed with an emoji for the expected weather. The api reports the weather only as an icon file name with no textual condition anywhere, so [WEATHER_ICONS.MD](WEATHER_ICONS.MD) documents what each of the 34 icons means and which emoji stands in for it. The icon set is versionless, so the bot also stores a hash of every icon and prefixes the line with a `(!)` linking to that document when an icon has been redrawn upstream and its emoji can no longer be trusted.
+
 ### Installation with Docker
 
 1. Clone the repository and create a `data` dir holding the `config.json`, see the config format in the step 4 of the systemd installation below

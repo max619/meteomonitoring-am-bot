@@ -122,6 +122,26 @@ Four entries are multi-emoji sequences (🌙☁️, 🌙🌧️, 🌙⛈️, �
 selector when copying these into source — dropping it makes some clients render a flat monochrome
 glyph instead.
 
+### Keeping this file and the code in step
+
+[`src/icons.ts`](src/icons.ts) holds the machine readable half of the table above: one entry per
+icon file name, carrying the emoji the bot prints and the **sha256 of the icon as it was when
+this document was written**. The bot verifies the hash of every icon a forecast refers to, at
+most once every 12 hours per icon, and marks the line with a `(!)` linking here when an icon no
+longer matches. An icon code that is not in the table at all gets the same `(!)` with no emoji,
+which is what would happen if the set ever grew past 34.
+
+A failed request is not treated as a change — there is no signal in a request that did not
+complete, and marking one would cry wolf on every network blip.
+
+Because the marker lands in the message text, and the bot detects a new forecast by hashing that
+text, an icon changing upstream also pushes a message to subscribers. That is intentional: it is
+the loudest channel this bot has.
+
+If a row above is corrected, or the artwork upstream legitimately changes, the emoji **and** the
+hash in `src/icons.ts` both have to be updated, or the bot will keep flagging a row this file
+says is fine.
+
 ## Which column applies
 
 `afternoon_icon` and `evening_icon` both draw from the **day** column, `night_icon` from the
