@@ -4,6 +4,8 @@ This is a telegram bot for getting forecast from [meteomonitoring.am](https://me
 
 The bot polls the `https://meteomonitoring.am/api/weather/ru/1` endpoint and sends the 6 day forecast as text to its subscribers whenever the forecast changes. Subscribe with `/subscribe`, unsubscribe with `/unsubscribe`.
 
+The Telegram user ids listed in the `admins` field of the `config.json` may additionally run `/users`, which lists every subscriber with the name Telegram reports for the chat. The command is silently ignored for everyone else.
+
 Each part of the day is prefixed with an emoji for the expected weather. The api reports the weather only as an icon file name with no textual condition anywhere, so [WEATHER_ICONS.MD](WEATHER_ICONS.MD) documents what each of the 34 icons means and which emoji stands in for it. The icon set is versionless, so the bot also stores a hash of every icon and prefixes the line with a `(!)` linking to that document when an icon has been redrawn upstream and its emoji can no longer be trusted.
 
 ### Installation with Docker
@@ -74,6 +76,16 @@ ln -s /opt/meteomonitoring-am-bot/meteomonitoring.service /lib/systemd/system/me
 {
   "token": "<token>",
   "checkTimeout": "120"
+}
+```
+
+Optionally add an `admins` field holding the Telegram user ids allowed to run the admin commands. Without the field nobody can run them.
+
+```json
+{
+  "token": "<token>",
+  "checkTimeout": "120",
+  "admins": [123456789]
 }
 ```
 

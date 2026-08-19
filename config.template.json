@@ -1,4 +1,5 @@
 {
   "token": "YOUR_TELEGRAM_BOT_TOKEN",
-  "proxy": "socks5h://user:password@127.0.0.1:1080"
+  "proxy": "socks5h://user:password@127.0.0.1:1080",
+  "admins": [123456789]
 }

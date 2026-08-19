@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 
-type Subscriber = {
+export type Subscriber = {
   chatId: number;
   lastForecastHash: string;
 };

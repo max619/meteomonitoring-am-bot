@@ -1,4 +1,8 @@
-import { Bot, type SendMessageParams } from "node-telegram-bot-api";
+import {
+  Bot,
+  type Context,
+  type SendMessageParams,
+} from "node-telegram-bot-api";
 import { run } from "node-telegram-bot-api/node";
 import {
   addSubscriber,
@@ -6,6 +10,7 @@ import {
   getSubscribers,
   updateSubscriber,
   updateSubscribers,
+  type Subscriber,
 } from "./subscriberManager.js"; // Import the subscriber manager
 import { loadConfig } from "./config.js";
 import { createProxyAgent, createProxyFetch } from "./proxy.js";
@@ -22,6 +27,15 @@ const bot = new Bot(config.token, { fetch: createProxyFetch(proxyAgent) });
 const messageOptions: Omit<SendMessageParams, "chat_id" | "text"> = {
   parse_mode: "HTML",
 };
+
+// The admin commands are keyed on the telegram user id, not on the chat,
+// so an admin is recognized in every chat the bot sees
+const admins = new Set(config.admins);
+
+function isAdmin(ctx: Context): boolean {
+  const userId = ctx.from?.id;
+  return userId !== undefined && admins.has(userId);
+}
 
 let lastForecast: Forecast | null = null;
 
@@ -85,10 +99,17 @@ async function sendForecastToSubscribers(forecast: Forecast): Promise<void> {
 
 // On client start send instructions
 bot.command("start", async (ctx) => {
+  const lines = [
+    "You can subscribe to forecast updates with /subscribe command.",
+    "You can unsubscribe from forecast updates with /unsubscribe command.",
+  ];
+
+  if (isAdmin(ctx)) {
+    lines.push("You can list the subscribers with /users command.");
+  }
+
   await ctx
-    .reply(
-      "You can subscribe to forecast updates with /subscribe command.\nYou can unsubscribe from forecast updates with /unsubscribe command."
-    )
+    .reply(lines.join("\n"))
     .catch((error) => console.error("Error sending start message:", error));
 });
 
@@ -168,6 +189,88 @@ bot.command("unsubscribe", async (ctx) => {
 
     console.log("User not subscribed:", chatId);
   }
+});
+
+// Telegram rejects a message longer than 4096 characters, so a long
+// subscriber list goes out as several messages
+const messageLengthLimit = 4096;
+
+function splitIntoMessages(lines: string[]): string[] {
+  const messages: string[] = [];
+
+  for (const line of lines) {
+    const last = messages[messages.length - 1];
+
+    if (last !== undefined && last.length + 1 + line.length <= messageLengthLimit) {
+      messages[messages.length - 1] = `${last}\n${line}`;
+    } else {
+      messages.push(line);
+    }
+  }
+
+  return messages;
+}
+
+// The database stores nothing but the chat id, so the names are asked
+// from telegram. A chat that blocked the bot or was deleted still answers,
+// but a failure here must not hide the subscriber from the list
+async function describeSubscriber(subscriber: Subscriber): Promise<string> {
+  const chat = await bot.api
+    .getChat({ chat_id: subscriber.chatId })
+    .catch((error) => {
+      console.error(`Error fetching chat ${subscriber.chatId}:`, error);
+      return null;
+    });
+
+  const name = chat
+    ? [chat.title, chat.first_name, chat.last_name].filter(Boolean).join(" ")
+    : "";
+  const username = chat?.username ? ` @${chat.username}` : "";
+  const parts = [`${subscriber.chatId}`];
+
+  if (name || username) {
+    parts.push(`${name}${username}`.trim());
+  } else if (!chat) {
+    parts.push("unavailable");
+  }
+
+  if (!subscriber.lastForecastHash) {
+    parts.push("no forecast sent yet");
+  }
+
+  return parts.join(" — ");
+}
+
+// Admin command listing everyone subscribed to the forecast
+bot.command("users", async (ctx) => {
+  if (!isAdmin(ctx)) {
+    console.log("Rejected /users from non admin:", ctx.from?.id);
+    return;
+  }
+
+  const subscribers = getSubscribers();
+  if (subscribers.length === 0) {
+    await ctx
+      .reply("There are no subscribers.")
+      .catch((error) => console.error("Error sending users message:", error));
+    return;
+  }
+
+  const lines = await Promise.all(subscribers.map(describeSubscriber));
+  const messages = splitIntoMessages([
+    `Subscribers (${subscribers.length}):`,
+    ...lines,
+  ]);
+
+  for (const message of messages) {
+    // Names come from telegram and may hold anything, so they are sent
+    // as plain text instead of the HTML the forecast uses
+    await ctx
+      .reply(message)
+      .catch((error) => console.error("Error sending users message:", error));
+  }
+
+  console.log("Admin listed subscribers:", ctx.from?.id);
 });
 
 // Start polling for forecast changes every 30 minutes
